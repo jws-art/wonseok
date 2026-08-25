@@ -31,9 +31,9 @@ async function generateWithRetry(ai: any, params: any, retries = 3, delay = 1000
       
       if (isTransient && attempt < retries) {
         console.warn(`[Gemini API] Transient error (attempt ${attempt}/${retries}):`, error);
-        // Fallback to gemini-3.1-flash-lite on retry if gemini-3.5-flash failed due to high demand
-        if (currentParams.model === 'gemini-3.5-flash') {
-          console.warn(`[Gemini API] Switching model from gemini-3.5-flash to gemini-3.1-flash-lite for retry`);
+        // Fallback to gemini-3.1-flash-lite on retry if primary model failed
+        if (currentParams.model === 'gemini-3.7-flash' || currentParams.model === 'gemini-3.5-flash') {
+          console.warn(`[Gemini API] Switching model to gemini-3.1-flash-lite for retry`);
           currentParams.model = 'gemini-3.1-flash-lite';
         }
         // Exponential backoff
@@ -133,7 +133,7 @@ app.post("/api/generate-report", async (req, res) => {
 `;
 
     const response = await generateWithRetry(ai, {
-      model: "gemini-3.5-flash",
+      model: "gemini-3.7-flash",
       contents: prompt,
       config: {
         temperature: 1.0,
@@ -212,7 +212,7 @@ app.post("/api/refine-section", async (req, res) => {
 `;
 
     const response = await generateWithRetry(ai, {
-      model: "gemini-3.5-flash",
+      model: "gemini-3.7-flash",
       contents: prompt,
       config: {
         temperature: 1.0,

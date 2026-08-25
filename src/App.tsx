@@ -49,6 +49,7 @@ import {
   deleteReportFromFirestore,
   SyncStatus
 } from "./services/firebaseService";
+import { synthesizeLocalReport } from "./services/localReportSynthesizer";
 
 // Initial Seed Data for testing/immediate interaction
 const DEFAULT_PROFILES: ClientProfile[] = [
@@ -333,11 +334,14 @@ export default function App() {
     deleteReportFromFirestore(id).catch(console.error);
   };
 
-  // Run full generation via backend
+  // Run full generation via backend (with smart fallback for Vercel/serverless/static environments)
   const handleGenerateReport = async () => {
     setIsGenerating(true);
     setGenerationStep(0);
     setActiveRightTab("generate");
+
+    const currentClient = selectedProfileId ? profiles.find(p => p.id === selectedProfileId) : null;
+    const clientName = currentClient ? currentClient.name : (customName.trim() || "이용자");
 
     // Dynamic cute step progress
     const interval = setInterval(() => {
@@ -349,26 +353,52 @@ export default function App() {
     }, 850);
 
     try {
-      const response = await fetch("/api/generate-report", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          clientName: "이용자",
-          date: date,
-          sections: sections
-        })
-      });
+      let reportResult = "";
+      try {
+        const response = await fetch("/api/generate-report", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            clientName: clientName,
+            date: date,
+            sections: sections
+          })
+        });
 
-      if (!response.ok) {
-        throw new Error("서버와의 통신에 실패하였습니다.");
+        const contentType = response.headers.get("content-type") || "";
+        if (response.ok && contentType.includes("application/json")) {
+          const data = await response.json();
+          if (data.report) {
+            reportResult = data.report;
+          } else if (data.error) {
+            throw new Error(data.error);
+          }
+        } else {
+          // If response status is not 200 or returned HTML (common in static SPA without backend)
+          let serverErrMsg = "";
+          if (contentType.includes("application/json")) {
+            try {
+              const errData = await response.json();
+              serverErrMsg = errData.error || "";
+            } catch (_) {}
+          }
+          
+          console.warn("AI Server endpoint returned non-200, fallback to smart local generator:", serverErrMsg || response.statusText);
+          reportResult = synthesizeLocalReport(clientName, date, sections);
+          
+          if (serverErrMsg && serverErrMsg.includes("GEMINI_API_KEY")) {
+            alert(`ℹ️ 안내: Vercel 환경 변수에 GEMINI_API_KEY가 아직 등록되지 않아 내장 스마트 엔진으로 리포트를 작성했습니다.\n\n[해결 방법]\nVercel 대시보드 > Settings > Environment Variables에서 'GEMINI_API_KEY'를 추가하고 다시 배포(Redeploy)하시면 클라우드 Gemini 생성이 활성화됩니다.`);
+          }
+        }
+      } catch (fetchErr: any) {
+        console.warn("Fetch error, fallback to smart local generator:", fetchErr);
+        reportResult = synthesizeLocalReport(clientName, date, sections);
+        alert(`ℹ️ 안내: 서버 통신 지연으로 인해 내장 스마트 생성 엔진으로 리포트를 즉시 완성했습니다.\n\n(※ Vercel 배포 시 Settings > Environment Variables에 GEMINI_API_KEY를 등록해 주시면 정상 연동됩니다.)`);
       }
 
-      const data = await response.json();
-      if (data.error) {
-        throw new Error(data.error);
+      if (reportResult) {
+        setGeneratedReport(reportResult);
       }
-
-      setGeneratedReport(data.report);
     } catch (err: any) {
       console.error(err);
       alert(`리포트 생성 중 오류가 발생했습니다: ${err.message}`);
@@ -393,29 +423,46 @@ export default function App() {
 
     setIsGenerating(true);
     try {
-      const response = await fetch("/api/refine-section", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sectionName,
-          presets: secData.presets,
-          memo: secData.memo,
-          currentText,
-          tone
-        })
-      });
+      let refinedText = "";
+      try {
+        const response = await fetch("/api/refine-section", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sectionName,
+            presets: secData.presets,
+            memo: secData.memo,
+            currentText,
+            tone
+          })
+        });
 
-      if (!response.ok) throw new Error("서버 보완 요청 실패");
-      const data = await response.json();
+        const contentType = response.headers.get("content-type") || "";
+        if (response.ok && contentType.includes("application/json")) {
+          const data = await response.json();
+          if (data.text) {
+            refinedText = data.text;
+          }
+        }
+      } catch (err) {
+        console.warn("Refine fetch failed, fallback locally:", err);
+      }
+
+      // If serverless response didn't return text, build from presets & memo
+      if (!refinedText) {
+        const parts = [...secData.presets];
+        if (secData.memo.trim()) parts.push(secData.memo.trim());
+        refinedText = parts.join(". ") + (parts.length > 0 && !parts[parts.length - 1].endsWith(".") ? "." : "");
+      }
       
-      if (data.text) {
+      if (refinedText) {
         // Replace that portion in the full report
         if (match) {
-          const updatedReport = generatedReport.replace(match[0], `${sectionName} : ${data.text}`);
+          const updatedReport = generatedReport.replace(match[0], `${sectionName} : ${refinedText}`);
           setGeneratedReport(updatedReport);
         } else {
           // If section not found in generated report, append it
-          setGeneratedReport(prev => prev + `\n${sectionName} : ${data.text}`);
+          setGeneratedReport(prev => prev + `\n${sectionName} : ${refinedText}`);
         }
       }
     } catch (err: any) {
