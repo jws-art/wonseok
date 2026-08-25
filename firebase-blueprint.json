@@ -1,0 +1,47 @@
+{
+  "entities": {
+    "ClientProfile": {
+      "title": "Client Profile",
+      "description": "Profile information for a care recipient or center client.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "birthDate": { "type": "string" },
+        "gender": { "type": "string", "enum": ["남", "여"] },
+        "relationNotes": { "type": "string" },
+        "defaultTemperature": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "userId": { "type": "string" }
+      },
+      "required": ["name"]
+    },
+    "DailyReport": {
+      "title": "Daily Report",
+      "description": "Generated daily observation and care log record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "clientId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "date": { "type": "string" },
+        "sections": { "type": "object" },
+        "generatedText": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "userId": { "type": "string" }
+      },
+      "required": ["clientId", "clientName", "date", "generatedText"]
+    }
+  },
+  "firestore": {
+    "/clientProfiles/{profileId}": {
+      "schema": "ClientProfile",
+      "description": "Collection of participant and client profiles."
+    },
+    "/dailyReports/{reportId}": {
+      "schema": "DailyReport",
+      "description": "Collection of daily observation and activity reports."
+    }
+  }
+}

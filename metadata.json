@@ -1,0 +1,6 @@
+{
+  "name": "Daily Report Auto-Writer",
+  "description": "An application to automatically generate daily reports with Gemini AI for social workers and caretakers.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
